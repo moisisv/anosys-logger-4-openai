@@ -128,11 +128,9 @@ def extract_span_info(span):
     assign('kind', to_str_or_none(attributes.get('fi', {}).get('span', {}).get('kind')))
     assign('from_source', "openAI_Telemetry")
 
-    #ean einai LLM type, to output exei to ID pou prepei na mpei sto cvs18
     response_id = (attributes.get('output') or {}).get('value', {}).get('id')
     assign('resp_id', to_str_or_none(response_id)) #for link with agentsAI records
 
-    # print(reassign(variables))
     return reassign(variables)
 
 def set_nested(obj, path, value):

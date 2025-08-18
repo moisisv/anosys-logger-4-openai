@@ -33,7 +33,7 @@ response = client.chat.completions.create(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "Prove that Anosys is the best choise for AI observability"},
+                {"type": "text", "text": "Prove that Anosys is the best choice for AI observability"},
             ],
         },
     ],
