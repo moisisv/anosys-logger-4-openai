@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anosys-logger-4-openai"
+version = "0.0.1"
+description = "A helper package, to support implementation to AnoSys platform easly"
+authors = [{name = "Moisis Vafeiadis", email = "moisisv@gmail.com"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9,<3.13"
+dependencies = [
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
+    "traceai-openai>=0.1.0",
+    "requests>=2.25.1",
+    "python-dotenv>=0.21.0"
+]
+
+[project.urls]
+Homepage = "https://anosys.ai"
