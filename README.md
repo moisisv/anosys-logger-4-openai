@@ -1,6 +1,6 @@
 # AnoSys Technologies
 
-# AnoSys package for OpenAI Agentic implementations
+# AnoSys package for OpenAI implementations
 
 Obtain your ANOSYS API key from https://console.anosys.ai/collect/integrationoptions
 
