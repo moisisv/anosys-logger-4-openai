@@ -4,10 +4,16 @@ import os
 import requests
 from dotenv import load_dotenv  
 from .tracing import setup_tracing 
+from .decorator import setup_decorator, anosys_logger 
 
 # Load environment variables from .env file
 load_dotenv()
 _tracing_initialized = False  # Global flag to ensure tracing setup is only run once
+
+__all__ = [
+    "AnosysOpenAILogger",
+    "anosys_logger",
+]
 
 class AnosysOpenAILogger:
     """
@@ -36,5 +42,6 @@ class AnosysOpenAILogger:
         self.get_user_context = get_user_context or (lambda: None)
 
         if not _tracing_initialized:
+            setup_decorator(self.log_api_url)
             setup_tracing(self.log_api_url)
             _tracing_initialized = True

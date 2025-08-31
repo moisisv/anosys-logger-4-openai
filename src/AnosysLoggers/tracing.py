@@ -48,7 +48,7 @@ key_to_cvs = {
   "from_source": "cvs200"
 }
 
-def reassign(data, starting_index=50):
+def reassign(data, starting_index=100):
     global key_to_cvs
     cvs_vars = {}
 
