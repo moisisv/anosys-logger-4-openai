@@ -28,15 +28,20 @@ console.log(response.choices[0].message.content);
 ## ---------- NEW DECORATOR-LIKE WRAPPER ----------
 
 ```js
-import { anosysLogger } from "./anosys-logger.js";
+import { anosysLogger, setupDecorator } from "anosys-logger";
 
-const testFunc = async (x, y) => {
+async function sumFunc(x, y) {
   return x + y;
-};
+}
 
-const loggedFunc = anosysLogger("math.add")(testFunc);
+setupDecorator();
+
+// overwrite testFunc with decorated version
+sumFunc = anosysLogger("math.add")(sumFunc);
 
 (async () => {
-  await loggedFunc(2, 3); // will log input/output/name to anosys
+  const result = await sumFunc(2, 3);
+  console.log("Result:", result);
+  console.log("Function name:", sumFunc.name);
 })();
 ```

@@ -210,28 +210,30 @@ export function instrumentOpenAI(client) {
   console.log("[ANOSYS] OpenAI client instrumented");
 }
 
-///////
-// ---------- NEW DECORATOR-LIKE WRAPPER ----------
+// ---------- JS DECORATOR ----------
 export function anosysLogger(source = null) {
   return function (fn) {
-    return async function (...args) {
+    const original = fn;
+
+    async function decorated(...args) {
       let output;
       let result;
       console.log(`[ANOSYS Logger: ${source}] Starting...`);
-      console.log(`[ANOSYS Logger: ${source}] Input args:`, args);
+      console.log(`[ANOSYS Logger: Input args:`, JSON.stringify(args));
 
       try {
-        result = await fn.apply(this, args);
+        result = await original.apply(this, args);
         output = result;
       } catch (err) {
         output = { error: err.message, stack: err.stack };
         throw err; // rethrow after logging
       } finally {
+        console.log(`[ANOSYS Logger: Outout args:`, JSON.stringify(output));
         const payload = {
           from_source: source,
           input: JSON.stringify(args),
           output: JSON.stringify(output),
-          name: fn.name || "anonymous",
+          name: original.name || "anonymous",
         };
 
         try {
@@ -245,7 +247,12 @@ export function anosysLogger(source = null) {
         }
       }
       return result;
-    };
+    }
+
+    // keep the original function name
+    Object.defineProperty(decorated, "name", { value: fn.name });
+
+    return decorated;
   };
 }
 
