@@ -30,18 +30,40 @@ console.log(response.choices[0].message.content);
 ```js
 import { anosysLogger, setupDecorator } from "anosys-logger";
 
-async function sumFunc(x, y) {
+async function sum(x, y) {
   return x + y;
 }
 
+//for consts use rename instead
+let modulo = (x, y) => {
+  return x % y;
+};
+
+const multiply = (x, y) => {
+  return x * y;
+};
+
 setupDecorator();
 
-// overwrite testFunc with decorated version
-sumFunc = anosysLogger("math.add")(sumFunc);
+// overwrite sum with decorated version
+sum = anosysLogger("math.sum")(sum);
+modulo = anosysLogger("math.modulo")(modulo);
+
+//NOTE tou cannot decorate const functions with same name.
+// create a new decorated reference
+const loggedMultiply = anosysLogger("math.multiply")(multiply);
 
 (async () => {
-  const result = await sumFunc(2, 3);
+  const result = await modulo(3, 2);
   console.log("Result:", result);
-  console.log("Function name:", sumFunc.name);
+
+  const result2 = await sum(2, 3);
+  console.log("Result:", result2);
+
+  //for const funtion
+  const result3 = await loggedMultiply(2, 3);
+  console.log("Result:", result3);
+  console.log("Original name:", multiply.name);
+  console.log("Decorated name:", loggedMultiply.name);
 })();
 ```

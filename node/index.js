@@ -218,8 +218,8 @@ export function anosysLogger(source = null) {
     async function decorated(...args) {
       let output;
       let result;
-      console.log(`[ANOSYS Logger: ${source}] Starting...`);
-      console.log(`[ANOSYS Logger: Input args:`, JSON.stringify(args));
+      console.log(`[ANOSYS] Logger: ${source}] Starting...`);
+      console.log(`[ANOSYS] Logger: Input args:`, JSON.stringify(args));
 
       try {
         result = await original.apply(this, args);
@@ -228,7 +228,7 @@ export function anosysLogger(source = null) {
         output = { error: err.message, stack: err.stack };
         throw err; // rethrow after logging
       } finally {
-        console.log(`[ANOSYS Logger: Outout args:`, JSON.stringify(output));
+        console.log(`[ANOSYS] Logger: Outout args:`, JSON.stringify(output));
         const payload = {
           from_source: source,
           input: JSON.stringify(args),
@@ -240,7 +240,7 @@ export function anosysLogger(source = null) {
           await axios.post(logApiUrl, renameKeysWithMap(payload, key_to_cvs), {
             timeout: 5000,
           });
-          console.log(`[ANOSYS Logger: ${source}] Logged successfully.`);
+          console.log(`[ANOSYS] Logger: ${source}] Logged successfully.`);
         } catch (err) {
           console.error("[ANOSYS] POST failed:", err.message);
           console.error("[ANOSYS] Data:", JSON.stringify(payload, null, 2));
@@ -256,7 +256,33 @@ export function anosysLogger(source = null) {
   };
 }
 
-export function setupDecorator() {
+export async function anosysRawLogger(data = {}) {
+  console.log(`[ANOSYS] anosysRawLogger`);
+  console.log(`[ANOSYS] data:`, JSON.stringify(data));
+
+  try {
+    await axios.post(logApiUrl, renameKeysWithMap(data, key_to_cvs), {
+      timeout: 5000,
+    });
+    console.log(
+      `[ANOSYS] Logger: ${data}] Logged successfully, with mapping ${JSON.stringify(
+        key_to_cvs,
+        null,
+        2
+      )}.`
+    );
+  } catch (err) {
+    console.error("[ANOSYS] POST failed:", err.message);
+    console.table(data);
+  }
+}
+
+export function setupDecorator(path = null) {
+  if (path) {
+    logApiUrl = path;
+    return;
+  }
+
   if (process.env.ANOSYS_API_KEY) {
     axios
       .get(
