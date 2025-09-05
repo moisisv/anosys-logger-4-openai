@@ -189,7 +189,8 @@ class CustomConsoleExporter(SpanExporter):
             deserialized = deserialize_attributes(span_json)
             data=extract_span_info(deserialized)
             try:
-                requests.post(log_api_url, json=data, timeout=5)
+                response = requests.post(log_api_url, json=data, timeout=5)
+                response.raise_for_status()  # Raises HTTPError for bad responses (e.g., 4xx/5xx)
             except Exception as e:
                 print(f"[ANOSYS] POST failed: {e}")
                 print(f"[ANOSYS] Data: {json.dumps(data, indent=2)}")

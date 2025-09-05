@@ -12,6 +12,27 @@ key_to_cvs = {
     "source": "cvs200"
 }
 
+def to_json_fallback(resp):
+    try:
+        # Case 1: object supports model_dump_json (pydantic-like OpenAI response)
+        if hasattr(resp, "model_dump_json"):
+            return resp.model_dump_json(indent=2)
+        # Case 2: object supports model_dump (dict)
+        elif hasattr(resp, "model_dump"):
+            return json.dumps(resp.model_dump(), indent=2)
+        # Case 3: object is already a dict
+        elif isinstance(resp, dict):
+            return json.dumps(resp, indent=2)
+        # Case 4: maybe already JSON string
+        try:
+            json.loads(resp)  # test if valid JSON
+            return resp  # it’s already JSON
+        except Exception:
+            # fallback → treat as plain string
+            return json.dumps({"output": str(resp)}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e), "output": str(resp)}, indent=2)
+
 def reassign(data, starting_index=100):
     global key_to_cvs
     cvs_vars = {}
@@ -66,8 +87,8 @@ def anosys_logger(source=None):
         @wraps(func)
         def wrapper(*args, **kwargs):
             variables = {}
-            print(f"[AnoSys Logger: {source}] Starting...")
-            print(f"[AnoSys Logger: {source}] Input args: {args}, kwargs: {kwargs}")
+            print(f"[ANOSYS Logger: {source}] Starting...")
+            print(f"[ANOSYS Logger: {source}] Input args: {args}, kwargs: {kwargs}")
 
             old_stdout = sys.stdout
             sys.stdout = io.StringIO()
@@ -79,16 +100,17 @@ def anosys_logger(source=None):
 
             output = text if text else printed_output.strip()
 
-            print(f"[AnoSys Logger: {source}] Captured output: {output}")
+            print(f"[ANOSYS Logger: {source}] Captured output: {output}")
 
             input_array = [to_str_or_none(arg) for arg in args]
 
             assign(variables, "source", to_str_or_none(source))
             assign(variables, "input", input_array)
-            assign(variables, "output", to_str_or_none(output))
+            assign(variables, "output", to_json_fallback(output))
 
             try:
-                requests.post(log_api_url, json=reassign(variables), timeout=5)
+                response = requests.post(log_api_url, json=reassign(variables), timeout=5)
+                response.raise_for_status()  # Raises HTTPError for bad responses (e.g., 4xx/5xx)
             except Exception as e:
                 print(f"[ANOSYS] POST failed: {e}")
                 print(f"[ANOSYS] Data: {json.dumps(variables, indent=2)}")
