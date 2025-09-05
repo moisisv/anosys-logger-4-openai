@@ -1,6 +1,6 @@
 {
   "name": "anosys-logger-4-openai",
-  "version": "0.0.6-beta",
+  "version": "0.0.7-beta",
   "description": "Anosys.ai package for OpenAI client tracing",
   "main": "index.js",
   "type": "module",
