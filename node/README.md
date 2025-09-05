@@ -24,3 +24,19 @@ const response = await client.chat.completions.create({
 
 console.log(response.choices[0].message.content);
 ```
+
+## ---------- NEW DECORATOR-LIKE WRAPPER ----------
+
+```js
+import { anosysLogger } from "./anosys-logger.js";
+
+const testFunc = async (x, y) => {
+  return x + y;
+};
+
+const loggedFunc = anosysLogger("math.add")(testFunc);
+
+(async () => {
+  await loggedFunc(2, 3); // will log input/output/name to anosys
+})();
+```
