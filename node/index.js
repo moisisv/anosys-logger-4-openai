@@ -249,7 +249,23 @@ export function anosysLogger(source = null) {
   };
 }
 
-// allow overriding URL like in Python's setup_decorator
-export function setupDecorator(apiUrl) {
-  if (apiUrl) logApiUrl = apiUrl;
+export function setupDecorator() {
+  if (process.env.ANOSYS_API_KEY) {
+    axios
+      .get(
+        `https://api.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
+        { timeout: 5000 } // 5 seconds
+      )
+      .then((response) => {
+        const data = response.data;
+        logApiUrl = data.url || "https://www.anosys.ai";
+      })
+      .catch((error) => {
+        console.error("[ERROR] Failed to resolve API key:", error.message);
+      });
+  } else {
+    console.log(
+      "[ERROR] ANOSYS_API_KEY not found. Please obtain your API key from https://console.anosys.ai/collect/integrationoptions"
+    );
+  }
 }
