@@ -25,10 +25,10 @@ const response = await client.chat.completions.create({
 console.log(response.choices[0].message.content);
 ```
 
-## ---------- NEW DECORATOR-LIKE WRAPPER ----------
+# - = DECORATOR AND RAW LOGGING = -
 
 ```js
-import { anosysLogger, setupDecorator } from "anosys-logger";
+import { anosysLogger, setupDecorator } from "anosys-logger-4-openai";
 
 async function sum(x, y) {
   return x + y;

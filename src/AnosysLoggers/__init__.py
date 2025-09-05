@@ -4,7 +4,7 @@ import os
 import requests
 from dotenv import load_dotenv  
 from .tracing import setup_tracing 
-from .decorator import setup_decorator, anosys_logger 
+from .decorator import setup_decorator, anosys_logger, anosys_raw_logger
 
 # Load environment variables from .env file
 load_dotenv()
@@ -13,6 +13,8 @@ _tracing_initialized = False  # Global flag to ensure tracing setup is only run 
 __all__ = [
     "AnosysOpenAILogger",
     "anosys_logger",
+    "anosys_raw_logger",
+    "setup_decorator",
 ]
 
 class AnosysOpenAILogger:
