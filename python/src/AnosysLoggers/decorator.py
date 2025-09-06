@@ -3,8 +3,11 @@ import io
 import sys
 import json
 import requests
+import os
 
 log_api_url="https://www.anosys.ai"
+# Add a global variable for default starting index
+global_starting_index = 100
 
 key_to_cvs = {
     "input": "cvs14",
@@ -40,18 +43,19 @@ def to_json_fallback(resp):
     except Exception as e:
         return json.dumps({"error": str(e), "output": str(resp)}, indent=2)
 
-def reassign(data, starting_index=100):
+def reassign(data, starting_index=None):
     """
     Maps dictionary keys to unique 'cvs' variable names and returns a new dict.
     
     Parameters:
     - data: dict or JSON string to be mapped.
     - starting_index: starting number for generating new 'cvs' variable names.
+                      Defaults to global_starting_index.
 
     Updates the global key_to_cvs mapping for unknown keys.
     Returns a dictionary where keys are 'cvs' variables and values are strings.
     """
-    global key_to_cvs
+    global key_to_cvs, global_starting_index
     cvs_vars = {}
 
     if isinstance(data, str):
@@ -60,7 +64,8 @@ def reassign(data, starting_index=100):
     if not isinstance(data, dict):
         raise ValueError("Input must be a dict or JSON string representing a dict")
 
-    cvs_index = starting_index
+    # Use provided starting_index or fallback to global default
+    cvs_index = starting_index if starting_index is not None else global_starting_index
 
     for key, value in data.items():
         if key not in key_to_cvs:
@@ -170,11 +175,12 @@ def anosys_raw_logger(data=None):
     if data is None:
         data = {}
 
-    print("[ANOSYS] anosys_raw_logger")
-    print("[ANOSYS] data:", json.dumps(data, indent=2))
+    # print("[ANOSYS] anosys_raw_logger")
+    # print("[ANOSYS] data:", json.dumps(data, indent=2))
 
     try:
         mapped_data = reassign(data)
+        print(mapped_data)
         response = requests.post(log_api_url, json=mapped_data, timeout=5)
         response.raise_for_status()
         print(f"[ANOSYS] Logger: {data} Logged successfully, with mapping {json.dumps(key_to_cvs, indent=2)}.")
@@ -185,17 +191,17 @@ def anosys_raw_logger(data=None):
         print(json.dumps(data, indent=2))
         return None
 
-def setup_decorator(path=None):
+def setup_decorator(path=None, starting_index=100):
     """
-    Sets up the logging decorator by configuring the Anosys API endpoint.
+    Sets up the logging decorator by configuring the Anosys API endpoint
+    and setting the global starting index for reassign().
 
     Parameters:
     - path: optional API URL to override the default
-
-    If no path is provided, attempts to resolve the API key from environment
-    variable 'ANOSYS_API_KEY' and fetch the endpoint from the Anosys API.
+    - starting_index: starting number for cvs variables (default 100)
     """
-    global log_api_url
+    global log_api_url, global_starting_index
+    global_starting_index = starting_index  # update global index
 
     if path:
         log_api_url = path
