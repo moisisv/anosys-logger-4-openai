@@ -10,11 +10,13 @@ from .decorator import setup_decorator, anosys_logger, anosys_raw_logger
 load_dotenv()
 _tracing_initialized = False  # Global flag to ensure tracing setup is only run once
 
+setup_api = setup_decorator  # new alias
 __all__ = [
     "AnosysOpenAILogger",
     "anosys_logger",
     "anosys_raw_logger",
     "setup_decorator",
+    "setup_api"
 ]
 
 class AnosysOpenAILogger:
@@ -28,7 +30,7 @@ class AnosysOpenAILogger:
         _tracing_initialized = False
         api_key = os.getenv('ANOSYS_API_KEY')
         if not api_key:
-            print("[ERROR] ANOSYS_API_KEY not found. Please obtain your API key from https://console.anosys.ai/collect/integrationoptions")
+            print("[ERROR]‼️ ANOSYS_API_KEYnot found. Please obtain your API key from https://console.anosys.ai/collect/integrationoptions")
 
         # retrive AnoSys url from API key and build the logging endpoint URL
         try:
@@ -37,7 +39,7 @@ class AnosysOpenAILogger:
             data = response.json()
             self.log_api_url = data.get("url", "https://www.anosys.ai")
         except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Failed to resolve API key: {e}")
+            print(f"[ERROR]❌ Failed to resolve API key: {e}")
             self.log_api_url = "https://www.anosys.ai"
 
         # Optional function to provide user context (e.g., session_id, token)

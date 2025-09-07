@@ -31,9 +31,9 @@ key_to_cvs = {
   "trace_state": "cvs4",
   "parent_id": "cvs5",
   "start_time": "cvs6",
-  "cvi1": "cvi1",
+  "cvn1": "cvn1",
   "end_time": "cvs7",
-  "cvi2": "cvi2",
+  "cvn2": "cvn2",
   "llm_tools": "cvs8",
   "llm_token_count": "cvs9",
   "llm_output_messages": "cvs10",
@@ -106,9 +106,9 @@ def extract_span_info(span):
     assign('trace_state', to_str_or_none(span.get('context', {}).get('trace_state')))
     assign('parent_id', to_str_or_none(span.get('parent_id')))
     assign('start_time', to_str_or_none(span.get('start_time')))
-    assign('cvi1', _to_timestamp(span.get('start_time')))
+    assign('cvn1', _to_timestamp(span.get('start_time')))
     assign('end_time', to_str_or_none(span.get('end_time')))
-    assign('cvi2', _to_timestamp(span.get('end_time')))
+    assign('cvn2', _to_timestamp(span.get('end_time')))
 
     # Attributes section
     attributes = span.get('attributes', {})
@@ -192,8 +192,8 @@ class CustomConsoleExporter(SpanExporter):
                 response = requests.post(log_api_url, json=data, timeout=5)
                 response.raise_for_status()  # Raises HTTPError for bad responses (e.g., 4xx/5xx)
             except Exception as e:
-                print(f"[ANOSYS] POST failed: {e}")
-                print(f"[ANOSYS] Data: {json.dumps(data, indent=2)}")
+                print(f"[ANOSYS]❌ POST failed: {e}")
+                print(f"[ANOSYS]❌ Data: {json.dumps(data, indent=2)}")
         return SpanExportResult.SUCCESS
 
 def setup_tracing(api_url):
@@ -212,7 +212,7 @@ def setup_tracing(api_url):
             if instrumentor._is_instrumented_by_opentelemetry:
                 instrumentor.uninstrument()
         except Exception as e:
-            print(f"[ANOSYS] Uninstrument error (safe to ignore if first call): {e}")
+            print(f"[ANOSYS]❌ Uninstrument error (safe to ignore if first call): {e}")
         instrumentor.instrument(tracer_provider=trace_provider)
 
         print("[ANOSYS] AnoSys Instrumented OpenAI agents with custom tracer")

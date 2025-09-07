@@ -5,59 +5,17 @@ import axios from "axios";
 
 let logApiUrl = "https://www.anosys.ai";
 
-function convertCvsToStrings(obj) {
-  const result = { ...obj }; // shallow copy to avoid mutating original
-
-  for (const key in result) {
-    if (key.startsWith("cvs")) {
-      const value = result[key];
-      if (typeof value !== "string") {
-        if (value === undefined || value === null) {
-          result[key] = String(value); // "undefined" or "null"
-        } else {
-          result[key] = JSON.stringify(value);
-        }
-      }
-    }
-  }
-  return result;
-}
-
-function renameKeysWithMap(obj, keyToCvsMap) {
-  const renamed = {};
-  let counter = 100; // start from cvs27 if no map exists
-
-  for (const [key, value] of Object.entries(obj)) {
-    // skip null or undefined values
-    if (value === null || value === undefined) continue;
-
-    if (keyToCvsMap[key]) {
-      // already in map
-      renamed[keyToCvsMap[key]] = value;
-    } else {
-      // assign next available cvsXXX
-      const newKey = `cvs${counter}`;
-      renamed[newKey] = value;
-
-      // update the map so the same unknown key is consistent later
-      keyToCvsMap[key] = newKey;
-
-      counter++;
-    }
-  }
-  return convertCvsToStrings(renamed);
-}
-
-const key_to_cvs = {
+// Key mappings
+const keyToCV = {
   name: "cvs1",
   trace_id: "cvs2",
   span_id: "cvs3",
   trace_state: "cvs4",
   parent_id: "cvs5",
   start_time: "cvs6",
-  cvi1: "cvi1",
+  cvn1: "cvn1",
   end_time: "cvs7",
-  cvi2: "cvi2",
+  cvn2: "cvn2",
   llm_tools: "cvs8",
   llm_token_count: "cvs9",
   llm_output_messages: "cvs10",
@@ -70,7 +28,6 @@ const key_to_cvs = {
   kind: "cvs17",
   resp_id: "cvs18",
   from_source: "cvs200",
-
   duration_ms: "cvs19",
   trace_flags: "cvs20",
   status: "cvs21",
@@ -80,6 +37,87 @@ const key_to_cvs = {
   model_method: "cvs25",
   model_arguments: "cvs26",
 };
+
+// Separate starting indices per type
+const globalStartingIndices = {
+  string: 100,
+  number: 3,
+  bool: 1,
+};
+
+// --- Utility functions ---
+
+function getTypeKey(value) {
+  if (typeof value === "boolean") return "bool";
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "int" : "float";
+  }
+  if (typeof value === "string") return "string";
+  return "string"; // default for objects/arrays
+}
+
+function getPrefixAndIndex(typeKey) {
+  switch (typeKey) {
+    case "bool":
+      return ["cvb", "bool"];
+    case "int":
+    case "float":
+      return ["cvn", "number"];
+    case "string":
+    default:
+      return ["cvs", "string"];
+  }
+}
+
+function stringifyIfNeeded(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "object") return JSON.stringify(value);
+  return value;
+}
+
+function renameKeysWithMap(obj, keyToCvsMap) {
+  const renamed = {};
+  let counter = 100;
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+
+    if (keyToCvsMap[key]) {
+      renamed[keyToCvsMap[key]] = stringifyIfNeeded(value);
+    } else {
+      const newKey = `cvs${counter}`;
+      renamed[newKey] = stringifyIfNeeded(value);
+      keyToCvsMap[key] = newKey;
+      counter++;
+    }
+  }
+  return renamed;
+}
+
+function reassign(data, startingIndices = null) {
+  const indices = startingIndices
+    ? { ...startingIndices }
+    : { ...globalStartingIndices };
+  const mapped = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    const typeKey = getTypeKey(value);
+    const [prefix, idxKey] = getPrefixAndIndex(typeKey);
+
+    if (!(key in keyToCV)) {
+      keyToCV[key] = `${prefix}${indices[idxKey]}`;
+      indices[idxKey]++;
+    }
+
+    const cvVar = keyToCV[key];
+    mapped[cvVar] = stringifyIfNeeded(value);
+  }
+
+  Object.assign(globalStartingIndices, indices);
+  return mapped;
+}
+
+// --- OpenTelemetry Exporter ---
 
 class AnoSysExporter {
   async export(spans, resultCallback) {
@@ -96,9 +134,8 @@ class AnoSysExporter {
         kind: span.kind || null,
         start_time: new Date(hrTimeToMillis(span.startTime)).toISOString(),
         end_time: new Date(hrTimeToMillis(span.endTime)).toISOString(),
-        cvi1: hrTimeToMillis(span.startTime),
-        cvi2: hrTimeToMillis(span.endTime),
-
+        cvn1: hrTimeToMillis(span.startTime),
+        cvn2: hrTimeToMillis(span.endTime),
         duration_ms:
           hrTimeToMillis(span.endTime) - hrTimeToMillis(span.startTime),
         status: span.status || null,
@@ -115,19 +152,20 @@ class AnoSysExporter {
           span_id: l.context.spanId,
           attributes: l.attributes,
         })),
-        resource: span.resource?.attributes, // if available
+        resource: span.resource?.attributes,
         resp_id: JSON.parse(span.attributes?.["openai.result"] || "{}")?.id,
         llm_model_name: JSON.parse(span.attributes?.["openai.result"] || "{}")
           ?.model,
         llm_token_count: JSON.parse(span.attributes?.["openai.result"] || "{}")
           ?.usage,
       };
+
       try {
-        await axios.post(logApiUrl, renameKeysWithMap(payload, key_to_cvs), {
+        await axios.post(logApiUrl, renameKeysWithMap(payload, keyToCV), {
           timeout: 5000,
         });
       } catch (err) {
-        console.error("[ANOSYS] POST failed:", err.message);
+        console.error("[ANOSYS]❌ POST failed:", err.message);
       }
     }
     resultCallback({ code: 0 });
@@ -136,6 +174,8 @@ class AnoSysExporter {
     return Promise.resolve();
   }
 }
+
+// --- Helpers ---
 
 function hrTimeToMillis(hrtime) {
   if (!Array.isArray(hrtime)) return null;
@@ -156,6 +196,8 @@ function setupTracing(apiUrl) {
   return trace.getTracer("anosys-openai");
 }
 
+// --- Public API ---
+
 export function instrumentOpenAI(client) {
   let tracer = setupTracing("https://www.anosys.ai");
 
@@ -163,15 +205,15 @@ export function instrumentOpenAI(client) {
     axios
       .get(
         `https://api.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
-        { timeout: 5000 } // 5 seconds
+        { timeout: 5000 }
       )
       .then((response) => {
         const data = response.data;
-        const logApiUrl = data.url || "https://www.anosys.ai";
-        tracer = setupTracing(logApiUrl);
+        const apiUrl = data.url || "https://www.anosys.ai";
+        tracer = setupTracing(apiUrl);
       })
       .catch((error) => {
-        console.error("[ERROR] Failed to resolve API key:", error.message);
+        console.error("[ERROR]❌ Failed to resolve API key:", error.message);
       });
   }
 
@@ -196,7 +238,6 @@ export function instrumentOpenAI(client) {
     };
   }
 
-  // Patch specific OpenAI methods (can expand this list)
   if (client.chat?.completions) {
     wrapMethod(client.chat.completions, "create", "chat.completions.create");
   }
@@ -210,7 +251,6 @@ export function instrumentOpenAI(client) {
   console.log("[ANOSYS] OpenAI client instrumented");
 }
 
-// ---------- JS DECORATOR ----------
 export function anosysLogger(source = null) {
   return function (fn) {
     const original = fn;
@@ -226,58 +266,65 @@ export function anosysLogger(source = null) {
         output = result;
       } catch (err) {
         output = { error: err.message, stack: err.stack };
-        throw err; // rethrow after logging
+        throw err;
       } finally {
-        console.log(`[ANOSYS] Logger: Outout args:`, JSON.stringify(output));
+        console.log(`[ANOSYS] Logger: Output args:`, JSON.stringify(output));
         const payload = {
           from_source: source,
-          input: JSON.stringify(args),
-          output: JSON.stringify(output),
+          input: args.toString(),
+          output: output.toString(),
           name: original.name || "anonymous",
         };
 
         try {
-          await axios.post(logApiUrl, renameKeysWithMap(payload, key_to_cvs), {
+          await axios.post(logApiUrl, renameKeysWithMap(payload, keyToCV), {
             timeout: 5000,
           });
-          console.log(`[ANOSYS] Logger: ${source}] Logged successfully.`);
+          console.log(
+            `[ANOSYS] Logger: ${source} Logged successfully, mapping: ${JSON.stringify(
+              keyToCV,
+              null,
+              2
+            )}.`
+          );
+          console.log(renameKeysWithMap(payload, keyToCV));
         } catch (err) {
-          console.error("[ANOSYS] POST failed:", err.message);
-          console.error("[ANOSYS] Data:", JSON.stringify(payload, null, 2));
+          console.error("[ANOSYS]❌ POST failed:", err.message);
+          console.error("[ANOSYS]❌ Data:", JSON.stringify(payload, null, 2));
         }
       }
       return result;
     }
 
-    // keep the original function name
     Object.defineProperty(decorated, "name", { value: fn.name });
-
     return decorated;
   };
 }
 
 export async function anosysRawLogger(data = {}) {
-  console.log(`[ANOSYS] anosysRawLogger`);
-  console.log(`[ANOSYS] data:`, JSON.stringify(data));
-
   try {
-    await axios.post(logApiUrl, renameKeysWithMap(data, key_to_cvs), {
+    await axios.post(logApiUrl, reassign(data, globalStartingIndices), {
       timeout: 5000,
     });
     console.log(
-      `[ANOSYS] Logger: ${data}] Logged successfully, with mapping ${JSON.stringify(
-        key_to_cvs,
-        null,
-        2
-      )}.`
+      `[ANOSYS] Logger: ${JSON.stringify(
+        data
+      )} Logged successfully, mapping: ${JSON.stringify(keyToCV, null, 2)}.`
     );
   } catch (err) {
-    console.error("[ANOSYS] POST failed:", err.message);
-    console.table(data);
+    console.error("[ANOSYS]❌ POST failed:", err.message);
+    console.error(
+      `[ANOSYS]❌ POST response: ${JSON.stringify(err.response.data)}`
+    );
+    console.log(JSON.stringify(data, null, 2));
   }
 }
 
-export function setupDecorator(path = null) {
+export function setupAPI({ path = null, startingIndices = null }) {
+  if (startingIndices) {
+    Object.assign(globalStartingIndices, startingIndices);
+  }
+
   if (path) {
     logApiUrl = path;
     return;
@@ -287,18 +334,18 @@ export function setupDecorator(path = null) {
     axios
       .get(
         `https://api.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
-        { timeout: 5000 } // 5 seconds
+        { timeout: 5000 }
       )
       .then((response) => {
         const data = response.data;
         logApiUrl = data.url || "https://www.anosys.ai";
       })
       .catch((error) => {
-        console.error("[ERROR] Failed to resolve API key:", error.message);
+        console.error("[ERROR]❌ Failed to resolve API key:", error.message);
       });
   } else {
     console.log(
-      "[ERROR] ANOSYS_API_KEY not found. Please obtain your API key from https://console.anosys.ai/collect/integrationoptions"
+      "[ERROR]‼️ ANOSYS_API_KEY not found. Please obtain your API key from https://console.anosys.ai/collect/integrationoptions"
     );
   }
 }

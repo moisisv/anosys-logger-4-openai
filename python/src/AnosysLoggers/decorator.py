@@ -1,33 +1,29 @@
 from functools import wraps
-import io
-import sys
-import json
-import requests
 import os
+import inspect
+import sys, io, json, requests
 
-log_api_url="https://www.anosys.ai"
-# Add a global variable for default starting index
-global_starting_index = 100
+# --- Global config ---
+log_api_url = "https://www.anosys.ai"
 
+# Separate index tracking for each type
+global_starting_indices = {
+    "string": 100,
+    "number": 3,
+    "bool": 1
+}
+
+# Known key mappings
 key_to_cvs = {
     "input": "cvs14",
     "output": "cvs15",
     "source": "cvs200"
 }
 
-def to_json_fallback(resp):
-    """
-    Converts a given response object to a JSON-formatted string.
-    
-    Handles multiple cases:
-    1. Object has 'model_dump_json' method (e.g., Pydantic/OpenAI response).
-    2. Object has 'model_dump' method.
-    3. Object is already a dict.
-    4. Object is a JSON string.
-    5. Fallback: treat as a plain string.
+# --- Utility functions ---
 
-    Returns a JSON string with indentation.
-    """
+def to_json_fallback(resp):
+    """Safely converts object/response into JSON string."""
     try:
         if hasattr(resp, "model_dump_json"):
             return resp.model_dump_json(indent=2)
@@ -43,19 +39,39 @@ def to_json_fallback(resp):
     except Exception as e:
         return json.dumps({"error": str(e), "output": str(resp)}, indent=2)
 
+
+def _get_prefix_and_index(value_type: str):
+    """Return the appropriate prefix and index counter name for a type."""
+    if value_type == "string":
+        return "cvs", "string"
+    elif value_type in ("int", "float"):
+        return "cvn", "number"
+    elif value_type == "bool":
+        return "cvb", "bool"
+    else:
+        return "cvs", "string"
+
+
+def _get_type_key(value):
+    """Map Python types to category keys."""
+    if isinstance(value, bool):
+        return "bool"
+    elif isinstance(value, int) and not isinstance(value, bool):
+        return "int"
+    elif isinstance(value, float):
+        return "float"
+    elif isinstance(value, str):
+        return "string"
+    else:
+        return "string"
+
+
 def reassign(data, starting_index=None):
     """
     Maps dictionary keys to unique 'cvs' variable names and returns a new dict.
-    
-    Parameters:
-    - data: dict or JSON string to be mapped.
-    - starting_index: starting number for generating new 'cvs' variable names.
-                      Defaults to global_starting_index.
-
-    Updates the global key_to_cvs mapping for unknown keys.
-    Returns a dictionary where keys are 'cvs' variables and values are strings.
+    Lists and dicts are STRINGIFIED before sending.
     """
-    global key_to_cvs, global_starting_index
+    global key_to_cvs, global_starting_indices
     cvs_vars = {}
 
     if isinstance(data, str):
@@ -64,39 +80,40 @@ def reassign(data, starting_index=None):
     if not isinstance(data, dict):
         raise ValueError("Input must be a dict or JSON string representing a dict")
 
-    # Use provided starting_index or fallback to global default
-    cvs_index = starting_index if starting_index is not None else global_starting_index
+    indices = starting_index if starting_index is not None else global_starting_indices.copy()
 
     for key, value in data.items():
+        value_type = _get_type_key(value)
+        prefix, index_key = _get_prefix_and_index(value_type)
+
         if key not in key_to_cvs:
-            key_to_cvs[key] = f"cvs{cvs_index}"
-            cvs_index += 1
+            key_to_cvs[key] = f"{prefix}{indices[index_key]}"
+            indices[index_key] += 1
+
         cvs_var = key_to_cvs[key]
-        cvs_vars[cvs_var] = str(value) if value is not None else None
+
+        # ✅ Stringify lists/dicts to ensure they are JSON strings in body
+        if isinstance(value, (dict, list)):
+            cvs_vars[cvs_var] = json.dumps(value)
+        elif isinstance(value, (bool, int, float)) or value is None:
+            cvs_vars[cvs_var] = value
+        else:
+            cvs_vars[cvs_var] = str(value)
 
     return cvs_vars
 
+
 def to_str_or_none(val):
-    """
-    Converts a value to a string, or returns None if the value is None.
-    
-    If the value is a dict or list, converts it to a JSON string.
-    """
+    """Convert value into string or JSON string if list/dict."""
     if val is None:
         return None
     if isinstance(val, (dict, list)):
         return json.dumps(val)
     return str(val)
 
+
 def assign(variables, variable, var_value):
-    """
-    Assigns a value to a variable in a dictionary with proper handling of types.
-    
-    - If the value is None, sets it to None.
-    - If the value is a string representing JSON, parses and re-serializes it.
-    - If the value is a dict or list, serializes it to JSON string.
-    - Otherwise, assigns the value as-is.
-    """
+    """Safely assign variable values with JSON handling."""
     if var_value is None:
         variables[variable] = None
     elif isinstance(var_value, str):
@@ -114,24 +131,30 @@ def assign(variables, variable, var_value):
     else:
         variables[variable] = var_value
 
-def anosys_logger(source=None):
-    """
-    Decorator to log function input, output, and metadata to the Anosys API.
-    
-    Captures:
-    - Function arguments
-    - Printed output
-    - Return value
 
-    Sends data to the configured Anosys logging API.
+# --- Decorator and raw logger ---
+def anosys_logger(source=None):
+    """Decorator to log function input/output to Anosys API,
+       including who called the function.
     """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            variables = {}
-            print(f"[ANOSYS] Logger: {source}] Starting...")
-            print(f"[ANOSYS] Logger: {source}] Input args: {args}, kwargs: {kwargs}")
+            global key_to_cvs
 
+            variables = {}
+
+            # === detect caller ===
+            stack = inspect.stack()
+            caller = stack[1]  # the function that called this one
+            caller_name = caller.function
+            caller_line = caller.lineno
+            caller_file = caller.filename
+
+            print(f"[ANOSYS] Logger (source={source}) "
+                  f"called from {caller_name} at {caller_file}:{caller_line}")
+
+            # === capture printed output and return value ===
             old_stdout = sys.stdout
             sys.stdout = io.StringIO()
             try:
@@ -141,67 +164,62 @@ def anosys_logger(source=None):
                 sys.stdout = old_stdout
 
             output = text if text else printed_output.strip()
+            print(f"[ANOSYS] Captured output: {output}")
+            print(f"[ANOSYS] Captured caller: {caller}")
 
-            print(f"[ANOSYS] Logger: {source}] Captured output: {output}")
-
+            # === prepare payload ===
             input_array = [to_str_or_none(arg) for arg in args]
-
             assign(variables, "source", to_str_or_none(source))
             assign(variables, "input", input_array)
             assign(variables, "output", to_json_fallback(output))
+            assign(variables, "caller", {
+                "function": caller_name,
+                "file": caller_file,
+                "line": caller_line,
+            })
 
+            # === send log ===
             try:
                 response = requests.post(log_api_url, json=reassign(variables), timeout=5)
                 response.raise_for_status()
+                print(f"[ANOSYS] Mapper: {key_to_cvs}")
             except Exception as e:
-                print(f"[ANOSYS] POST failed: {e}")
-                print(f"[ANOSYS] Data: {json.dumps(variables, indent=2)}")
+                print(f"[ANOSYS]❌ POST failed: {e}")
+                print(f"[ANOSYS]❌ Data: {json.dumps(variables, indent=2)}")
 
             return text
-
         return wrapper
-
     return decorator
 
+
 def anosys_raw_logger(data=None):
-    """
-    Logs raw data to the Anosys API without wrapping a function.
-
-    Parameters:
-    - data: dictionary of data to log (default empty dict)
-
-    Maps keys to 'cvs' variables and sends them to the Anosys logging API.
-    """
+    """Directly logs raw data dict/json to Anosys API (dicts/lists are stringified)."""
+    global key_to_cvs
     if data is None:
         data = {}
-
-    # print("[ANOSYS] anosys_raw_logger")
-    # print("[ANOSYS] data:", json.dumps(data, indent=2))
-
     try:
         mapped_data = reassign(data)
-        print(mapped_data)
         response = requests.post(log_api_url, json=mapped_data, timeout=5)
         response.raise_for_status()
         print(f"[ANOSYS] Logger: {data} Logged successfully, with mapping {json.dumps(key_to_cvs, indent=2)}.")
         return response
     except Exception as err:
-        print(f"[ANOSYS] POST failed: {err}")
-        print("[ANOSYS] Data:")
-        print(json.dumps(data, indent=2))
+        print(f"[ANOSYS]❌ POST failed: {err}")
+        print("[ANOSYS]❌ Data:")
+        print(json.dumps(mapped_data, indent=2))
         return None
 
-def setup_decorator(path=None, starting_index=100):
-    """
-    Sets up the logging decorator by configuring the Anosys API endpoint
-    and setting the global starting index for reassign().
 
-    Parameters:
-    - path: optional API URL to override the default
-    - starting_index: starting number for cvs variables (default 100)
+def setup_decorator(path=None, starting_indices=None):
     """
-    global log_api_url, global_starting_index
-    global_starting_index = starting_index  # update global index
+    Setup logging decorator:
+    - path: override Anosys API URL
+    - starting_indices: dict of starting indices per type
+    """
+    global log_api_url, global_starting_indices
+
+    if starting_indices:
+        global_starting_indices.update(starting_indices)
 
     if path:
         log_api_url = path
@@ -218,7 +236,7 @@ def setup_decorator(path=None, starting_index=100):
             data = response.json()
             log_api_url = data.get("url", "https://www.anosys.ai")
         except requests.RequestException as e:
-            print(f"[ERROR] Failed to resolve API key: {e}")
+            print(f"[ERROR]❌ Failed to resolve API key: {e}")
     else:
-        print("[ERROR] ANOSYS_API_KEY not found. Please obtain your API key from "
+        print("[ERROR]‼️ ANOSYS_API_KEY not found. Please obtain your API key from "
               "https://console.anosys.ai/collect/integrationoptions")
