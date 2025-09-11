@@ -3,7 +3,7 @@ from datetime import datetime
 import os
 import requests
 from dotenv import load_dotenv  
-from .tracing import setup_tracing 
+from .tracing import setup_tracing
 from .decorator import setup_decorator, anosys_logger, anosys_raw_logger
 
 # Load environment variables from .env file

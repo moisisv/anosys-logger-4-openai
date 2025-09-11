@@ -28,14 +28,14 @@ const keyToCV = {
   kind: "cvs17",
   resp_id: "cvs18",
   from_source: "cvs200",
-  duration_ms: "cvs19",
-  trace_flags: "cvs20",
-  status: "cvs21",
-  resource: "cvs22",
-  events: "cvs23",
-  links: "cvs24",
-  model_method: "cvs25",
-  model_arguments: "cvs26",
+  duration_ms: "cvs10",
+  trace_flags: "cvs11",
+  status: "cvs12",
+  resource: "cvs13",
+  events: "cvs14",
+  links: "cvs15",
+  model_method: "cvs16",
+  model_arguments: "cvs17",
 };
 
 // Separate starting indices per type

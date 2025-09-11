@@ -15,8 +15,9 @@ global_starting_indices = {
 
 # Known key mappings
 key_to_cvs = {
-    "input": "cvs14",
-    "output": "cvs15",
+    "input": "cvs1",
+    "output": "cvs2",
+    "caller": "cvs18",
     "source": "cvs200"
 }
 
@@ -146,13 +147,16 @@ def anosys_logger(source=None):
 
             # === detect caller ===
             stack = inspect.stack()
-            caller = stack[1]  # the function that called this one
-            caller_name = caller.function
-            caller_line = caller.lineno
-            caller_file = caller.filename
+            caller_frame = stack[1]  # the function that called this one
+            caller_info = {
+                "function": caller_frame.function,
+                "file": caller_frame.filename,
+                "line": caller_frame.lineno,
+            }
 
             print(f"[ANOSYS] Logger (source={source}) "
-                  f"called from {caller_name} at {caller_file}:{caller_line}")
+                  f"called from {caller_info['function']} "
+                  f"at {caller_info['file']}:{caller_info['line']}")
 
             # === capture printed output and return value ===
             old_stdout = sys.stdout
@@ -165,18 +169,14 @@ def anosys_logger(source=None):
 
             output = text if text else printed_output.strip()
             print(f"[ANOSYS] Captured output: {output}")
-            print(f"[ANOSYS] Captured caller: {caller}")
+            print(f"[ANOSYS] Captured caller: {caller_info}")
 
             # === prepare payload ===
             input_array = [to_str_or_none(arg) for arg in args]
             assign(variables, "source", to_str_or_none(source))
             assign(variables, "input", input_array)
             assign(variables, "output", to_json_fallback(output))
-            assign(variables, "caller", {
-                "function": caller_name,
-                "file": caller_file,
-                "line": caller_line,
-            })
+            assign(variables, "caller", caller_info)  # now structured dict
 
             # === send log ===
             try:
@@ -191,7 +191,6 @@ def anosys_logger(source=None):
         return wrapper
     return decorator
 
-
 def anosys_raw_logger(data=None):
     """Directly logs raw data dict/json to Anosys API (dicts/lists are stringified)."""
     global key_to_cvs
@@ -201,7 +200,8 @@ def anosys_raw_logger(data=None):
         mapped_data = reassign(data)
         response = requests.post(log_api_url, json=mapped_data, timeout=5)
         response.raise_for_status()
-        print(f"[ANOSYS] Logger: {data} Logged successfully, with mapping {json.dumps(key_to_cvs, indent=2)}.")
+        print(f"[ANOSYS] Logger: {data} Logged successfully.")
+        print(f"[ANOSYS] Mapper: {key_to_cvs}")
         return response
     except Exception as err:
         print(f"[ANOSYS]❌ POST failed: {err}")
