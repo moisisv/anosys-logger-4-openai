@@ -1,8 +1,8 @@
-
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
-    SimpleSpanProcessor,
+    SimpleSpanProcessor, 
+    BatchSpanProcessor,
     SpanExporter,
     SpanExportResult,
 )
@@ -14,15 +14,17 @@ import requests
 
 # Prevent re-initialization
 _lock = threading.Lock()
-log_api_url="https://www.anosys.ai"
+log_api_url = "https://www.anosys.ai"
+
 
 def _to_timestamp(dt_str):
     if not dt_str:
         return None
     try:
-        return int(datetime.fromisoformat(dt_str).timestamp() )
+        return int(datetime.fromisoformat(dt_str).timestamp())
     except ValueError:
         return None
+
 
 key_to_cvs = {
     "cvn1": "cvn1",
@@ -45,8 +47,10 @@ key_to_cvs = {
     "llm_input_messages": "cvs7",
     "llm_model_name": "cvs8",
     "llm_invocation_parameters": "cvs9",
-    "from_source": "cvs200"
+    "from_source": "cvs200",
+    "raw": "cvs199"
 }
+
 
 def reassign(data, starting_index=20):
     global key_to_cvs
@@ -65,12 +69,12 @@ def reassign(data, starting_index=20):
             key_to_cvs[key] = f"cvs{cvs_index}"
             cvs_index += 1
         cvs_var = key_to_cvs[key]
-        # Only convert to string if value is not None
         cvs_vars[cvs_var] = str(value) if value is not None else None
 
     return cvs_vars
 
-def extract_span_info(span):
+
+def extract_span_info(span, raw_json = None):
     variables = {}
 
     def to_str_or_none(val):
@@ -85,7 +89,6 @@ def extract_span_info(span):
             variables[variable] = None
         elif isinstance(var_value, str):
             var_value = var_value.strip()
-            # Try to parse JSON strings if they look like objects/arrays
             if var_value.startswith('{') or var_value.startswith('['):
                 try:
                     parsed = json.loads(var_value)
@@ -99,7 +102,7 @@ def extract_span_info(span):
         else:
             variables[variable] = var_value
 
-    # Top-level keys (convert string-type fields)
+    # Top-level keys
     assign('name', to_str_or_none(span.get('name')))
     assign('trace_id', to_str_or_none(span.get('context', {}).get('trace_id')))
     assign('span_id', to_str_or_none(span.get('context', {}).get('span_id')))
@@ -110,7 +113,7 @@ def extract_span_info(span):
     assign('end_time', to_str_or_none(span.get('end_time')))
     assign('cvn2', _to_timestamp(span.get('end_time')))
 
-    # Attributes section
+    # Attributes
     attributes = span.get('attributes', {})
 
     assign('llm_tools', to_str_or_none(attributes.get('llm', {}).get('tools')))
@@ -128,10 +131,30 @@ def extract_span_info(span):
     assign('kind', to_str_or_none(attributes.get('fi', {}).get('span', {}).get('kind')))
     assign('from_source', "openAI_Telemetry")
 
-    response_id = (attributes.get('output') or {}).get('value', {}).get('id')
-    assign('resp_id', to_str_or_none(response_id)) #for link with agentsAI records
+    # ✅ FIX: safely handle dict / list / str / None cases
+    response_id = None
+    output_attr = attributes.get('output')
 
+    if isinstance(output_attr, dict):
+        response_id = (output_attr.get('value') or {}).get('id')
+    elif isinstance(output_attr, list) and output_attr:
+        first = output_attr[0]
+        if isinstance(first, dict):
+            response_id = (first.get('value') or {}).get('id')
+    elif isinstance(output_attr, str):
+        try:
+            parsed = json.loads(output_attr)
+            if isinstance(parsed, dict):
+                response_id = (parsed.get('value') or {}).get('id')
+        except Exception:
+            pass
+
+    assign('resp_id', to_str_or_none(response_id))  # for link with agentsAI records
+
+    if raw_json is not None:
+        assign("raw", json.dumps(raw_json, default=str))
     return reassign(variables)
+
 
 def set_nested(obj, path, value):
     parts = path.split(".")
@@ -163,7 +186,6 @@ def set_nested(obj, path, value):
             current.append(None)
     except ValueError:
         pass
-    # Try JSON parsing
     if isinstance(value, str) and value.strip().startswith(("{", "[")):
         try:
             value = json.loads(value)
@@ -174,6 +196,7 @@ def set_nested(obj, path, value):
     else:
         current[final_key] = value
 
+
 def deserialize_attributes(obj):
     flat_attrs = obj.get("attributes", {})
     new_attrs = {}
@@ -182,37 +205,52 @@ def deserialize_attributes(obj):
     obj["attributes"] = new_attrs
     return obj
 
+
 class CustomConsoleExporter(SpanExporter):
     def export(self, spans) -> SpanExportResult:
         for span in spans:
             span_json = json.loads(span.to_json(indent=2))
             deserialized = deserialize_attributes(span_json)
-            data=extract_span_info(deserialized)
+            data = extract_span_info(deserialized, raw_json=span_json)
             try:
                 response = requests.post(log_api_url, json=data, timeout=5)
-                response.raise_for_status()  # Raises HTTPError for bad responses (e.g., 4xx/5xx)
+                response.raise_for_status()
             except Exception as e:
                 print(f"[ANOSYS]❌ POST failed: {e}")
                 print(f"[ANOSYS]❌ Data: {json.dumps(data, indent=2)}")
         return SpanExportResult.SUCCESS
 
-def setup_tracing(api_url):
+def setup_tracing(api_url, use_batch_processor=False):
+    """
+    Initialize tracing for OpenAI with optional BatchSpanProcessor.
+
+    Args:
+        api_url (str): URL to post telemetry data.
+        use_batch_processor (bool): If True, use BatchSpanProcessor; otherwise, SimpleSpanProcessor.
+    """
     global log_api_url
     log_api_url = api_url
 
     with _lock:
-        # Setup provider + console exporter
         trace_provider = TracerProvider()
-        trace_provider.add_span_processor(SimpleSpanProcessor(CustomConsoleExporter()))
+
+        exporter = CustomConsoleExporter()
+        if use_batch_processor:
+            span_processor = BatchSpanProcessor(exporter, schedule_delay_millis=1000, max_queue_size=2048, max_export_batch_size=512)
+            print("[ANOSYS] Using BatchSpanProcessor for spans")
+        else:
+            span_processor = SimpleSpanProcessor(exporter)
+            print("[ANOSYS] Using SimpleSpanProcessor for spans")
+
+        trace_provider.add_span_processor(span_processor)
         trace.set_tracer_provider(trace_provider)
 
-        # Re-instrument OpenAI Instrumentor
         instrumentor = OpenAIInstrumentor()
         try:
             if instrumentor._is_instrumented_by_opentelemetry:
                 instrumentor.uninstrument()
         except Exception as e:
             print(f"[ANOSYS]❌ Uninstrument error (safe to ignore if first call): {e}")
-        instrumentor.instrument(tracer_provider=trace_provider)
 
-        print("[ANOSYS] AnoSys Instrumented OpenAI agents with custom tracer")
+        instrumentor.instrument(tracer_provider=trace_provider)
+        print("[ANOSYS] AnoSys Instrumented OpenAI with custom tracer")

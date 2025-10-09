@@ -7,26 +7,26 @@ let logApiUrl = "https://www.anosys.ai";
 
 // Key mappings
 const keyToCV = {
-  name: "cvs1",
-  trace_id: "cvs2",
-  span_id: "cvs3",
-  trace_state: "cvs4",
-  parent_id: "cvs5",
-  start_time: "cvs6",
   cvn1: "cvn1",
-  end_time: "cvs7",
   cvn2: "cvn2",
-  llm_tools: "cvs8",
-  llm_token_count: "cvs9",
-  llm_output_messages: "cvs10",
-  llm_input_messages: "cvs11",
-  llm_model_name: "cvs12",
-  llm_invocation_parameters: "cvs13",
-  input: "cvs14",
-  output: "cvs15",
-  tool: "cvs16",
-  kind: "cvs17",
-  resp_id: "cvs18",
+  name: "otel_name",
+  trace_id: "otel_trace_id",
+  span_id: "otel_span_id",
+  trace_state: "otel_trace_flags", // closest match
+  parent_id: "otel_parent_span_id",
+  start_time: "otel_start_time",
+  end_time: "otel_end_time",
+  kind: "otel_kind",
+  resp_id: "otel_status_message", // could also be custom attribute
+  input: "cvs1",
+  output: "cvs2",
+  tool: "cvs3",
+  llm_tools: "cvs4",
+  llm_token_count: "cvs5",
+  llm_output_messages: "cvs6",
+  llm_input_messages: "cvs7",
+  llm_model_name: "cvs8",
+  llm_invocation_parameters: "cvs9",
   from_source: "cvs200",
   duration_ms: "cvs10",
   trace_flags: "cvs11",
@@ -124,7 +124,7 @@ class AnoSysExporter {
     for (const span of spans) {
       const ctx = span.spanContext();
       const payload = {
-        from_source: "openAI_Telemetry_in_node",
+        from_source: "openAI_Node_Telemetry",
         name: span.name || null,
         trace_id: ctx.traceId || null,
         span_id: ctx.spanId || null,
