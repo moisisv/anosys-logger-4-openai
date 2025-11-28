@@ -1,5 +1,5 @@
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import TracerProvider, Status, StatusCode
 from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor, 
     BatchSpanProcessor,
@@ -9,154 +9,215 @@ from opentelemetry.sdk.trace.export import (
 from traceai_openai import OpenAIInstrumentor
 import threading
 import json
+import os
 from datetime import datetime
 import requests
+
+# Import shared utilities
+from .utils import (
+    key_to_cvs,
+    reassign,
+    to_str_or_none,
+    assign,
+    to_json_fallback,
+)
 
 # Prevent re-initialization
 _lock = threading.Lock()
 log_api_url = "https://www.anosys.ai"
 
 
+def get_env_bool(var_name: str) -> bool:
+    """
+    Returns True if the environment variable doesn't exist,
+    otherwise converts its value to a boolean.
+    """
+    value = os.getenv(var_name)
+
+    if value is None:
+        return True  # Default to True if variable not set
+
+    # Normalize and convert string to boolean
+    value_str = value.strip().lower()
+    if value_str in ('1', 'true', 'yes', 'on'):
+        return True
+    elif value_str in ('0', 'false', 'no', 'off'):
+        return False
+    else:
+        # If it's an unexpected string, still try bool() fallback
+        return bool(value_str)
+
+
 def _to_timestamp(dt_str):
+    """Convert ISO datetime string to milliseconds timestamp."""
     if not dt_str:
         return None
     try:
-        return int(datetime.fromisoformat(dt_str).timestamp())
-    except ValueError:
+        return int(datetime.fromisoformat(dt_str.replace('Z', '+00:00')).timestamp() * 1000)
+    except (ValueError, AttributeError):
         return None
 
 
-key_to_cvs = {
-    "cvn1": "cvn1",
-    "cvn2": "cvn2",
-    "name": "otel_name",
-    "trace_id": "otel_trace_id",
-    "span_id": "otel_span_id",
-    "trace_state": "otel_trace_flags",  # closest match
-    "parent_id": "otel_parent_span_id",
-    "start_time": "otel_start_time",
-    "end_time": "otel_end_time",
-    "kind": "otel_kind",
-    "resp_id": "otel_status_message",  # could also be custom attribute
-    "input": "cvs1",
-    "output": "cvs2",
-    "tool": "cvs3",
-    "llm_tools": "cvs4",
-    "llm_token_count": "cvs5",
-    "llm_output_messages": "cvs6",
-    "llm_input_messages": "cvs7",
-    "llm_model_name": "cvs8",
-    "llm_invocation_parameters": "cvs9",
-    "from_source": "cvs200",
-    "raw": "cvs199"
-}
-
-
-def reassign(data, starting_index=20):
-    global key_to_cvs
-    cvs_vars = {}
-
-    if isinstance(data, str):
-        data = json.loads(data)
-
-    if not isinstance(data, dict):
-        raise ValueError("Input must be a dict or JSON string representing a dict")
-
-    cvs_index = starting_index
-
-    for key, value in data.items():
-        if key not in key_to_cvs:
-            key_to_cvs[key] = f"cvs{cvs_index}"
-            cvs_index += 1
-        cvs_var = key_to_cvs[key]
-        cvs_vars[cvs_var] = str(value) if value is not None else None
-
-    return cvs_vars
-
-
-def extract_span_info(span, raw_json = None):
+def extract_span_info(span):
+    """
+    Extract and transform span information into Anosys format.
+    Includes OpenTelemetry semantic conventions for Gen AI.
+    """
     variables = {}
 
-    def to_str_or_none(val):
-        if val is None:
-            return None
-        if isinstance(val, (dict, list)):
-            return json.dumps(val)
-        return str(val)
+    # Top-level metadata
+    assign(variables, 'otel_record_type', 'AnoSys Trace')
+    assign(variables, 'custom_mapping', json.dumps(key_to_cvs, indent=4))
+    assign(variables, 'otel_observed_timestamp', datetime.utcnow().isoformat() + "Z")
+    assign(variables, 'name', to_str_or_none(span.get('name')))
+    assign(variables, 'trace_id', to_str_or_none(span.get('context', {}).get('trace_id')))
+    assign(variables, 'span_id', to_str_or_none(span.get('context', {}).get('span_id')))
+    assign(variables, 'trace_state', to_str_or_none(span.get('context', {}).get('trace_state')))
+    assign(variables, 'parent_id', to_str_or_none(span.get('parent_id')))
+    assign(variables, 'start_time', to_str_or_none(span.get('start_time')))
+    assign(variables, 'cvn1', _to_timestamp(span.get('start_time')))
+    assign(variables, 'end_time', to_str_or_none(span.get('end_time')))
+    assign(variables, 'cvn2', _to_timestamp(span.get('end_time')))
+    
+    # Duration calculation
+    start_ts = _to_timestamp(span.get('start_time'))
+    end_ts = _to_timestamp(span.get('end_time'))
+    if start_ts and end_ts:
+        assign(variables, 'otel_duration_ms', end_ts - start_ts)
 
-    def assign(variable, var_value):
-        if var_value is None:
-            variables[variable] = None
-        elif isinstance(var_value, str):
-            var_value = var_value.strip()
-            if var_value.startswith('{') or var_value.startswith('['):
-                try:
-                    parsed = json.loads(var_value)
-                    variables[variable] = json.dumps(parsed)
-                    return
-                except json.JSONDecodeError:
-                    pass
-            variables[variable] = var_value
-        elif isinstance(var_value, (dict, list)):
-            variables[variable] = json.dumps(var_value)
-        else:
-            variables[variable] = var_value
-
-    # Top-level keys
-    assign('name', to_str_or_none(span.get('name')))
-    assign('trace_id', to_str_or_none(span.get('context', {}).get('trace_id')))
-    assign('span_id', to_str_or_none(span.get('context', {}).get('span_id')))
-    assign('trace_state', to_str_or_none(span.get('context', {}).get('trace_state')))
-    assign('parent_id', to_str_or_none(span.get('parent_id')))
-    assign('start_time', to_str_or_none(span.get('start_time')))
-    assign('cvn1', _to_timestamp(span.get('start_time')))
-    assign('end_time', to_str_or_none(span.get('end_time')))
-    assign('cvn2', _to_timestamp(span.get('end_time')))
+    # Status information
+    status = span.get('status', {})
+    if status:
+        assign(variables, 'status', to_str_or_none(status))
+        status_code = status.get('status_code')
+        if status_code:
+            # Map OpenTelemetry status codes to string
+            status_map = {0: 'UNSET', 1: 'OK', 2: 'ERROR'}
+            assign(variables, 'status_code', status_map.get(status_code, str(status_code)))
 
     # Attributes
     attributes = span.get('attributes', {})
 
-    assign('llm_tools', to_str_or_none(attributes.get('llm', {}).get('tools')))
-    assign('llm_token_count', to_str_or_none(attributes.get('llm', {}).get('token_count')))
-    assign('llm_output_messages', to_str_or_none(
-        attributes.get('llm', {}).get('output_messages', {}).get('output_messages')))
-    assign('llm_input_messages', to_str_or_none(
-        attributes.get('llm', {}).get('input_messages', {}).get('input_messages')))
-    assign('llm_model_name', to_str_or_none(attributes.get('llm', {}).get('model_name')))
-    assign('llm_invocation_parameters', to_str_or_none(attributes.get('llm', {}).get('invocation_parameters')))
-
-    assign('input', to_str_or_none(attributes.get('input', {}).get('value')))
-    assign('output', to_str_or_none(attributes.get('output', {}).get('value')))
-    assign('tool', to_str_or_none(attributes.get('tool', {})))
-    assign('kind', to_str_or_none(attributes.get('fi', {}).get('span', {}).get('kind')))
-    assign('from_source', "openAI_Telemetry")
-
-    # ✅ FIX: safely handle dict / list / str / None cases
-    response_id = None
-    output_attr = attributes.get('output')
-
-    if isinstance(output_attr, dict):
-        response_id = (output_attr.get('value') or {}).get('id')
-    elif isinstance(output_attr, list) and output_attr:
-        first = output_attr[0]
-        if isinstance(first, dict):
-            response_id = (first.get('value') or {}).get('id')
-    elif isinstance(output_attr, str):
+    # OpenTelemetry Semantic Conventions for Gen AI
+    # Reference: https://opentelemetry.io/docs/specs/semconv/gen-ai/
+    
+    # System is always "openai" for this instrumentor
+    assign(variables, 'gen_ai.system', 'openai')
+    
+    # Extract model information from invocation parameters or result
+    llm_attrs = attributes.get('llm', {})
+    invocation_params = llm_attrs.get('invocation_parameters', {})
+    
+    if isinstance(invocation_params, str):
         try:
-            parsed = json.loads(output_attr)
-            if isinstance(parsed, dict):
-                response_id = (parsed.get('value') or {}).get('id')
-        except Exception:
-            pass
-
-    assign('resp_id', to_str_or_none(response_id))  # for link with agentsAI records
-
-    if raw_json is not None:
-        assign("raw", json.dumps(raw_json, default=str))
+            invocation_params = json.loads(invocation_params)
+        except:
+            invocation_params = {}
+    
+    # Request parameters (semantic conventions)
+    model_name = llm_attrs.get('model_name')
+    if model_name:
+        assign(variables, 'gen_ai.request.model', to_str_or_none(model_name))
+    
+    if isinstance(invocation_params, dict):
+        temperature = invocation_params.get('temperature')
+        max_tokens = invocation_params.get('max_tokens')
+        top_p = invocation_params.get('top_p')
+        
+        if temperature is not None:
+            assign(variables, 'gen_ai.request.temperature', temperature)
+        if max_tokens is not None:
+            assign(variables, 'gen_ai.request.max_tokens', max_tokens)
+        if top_p is not None:
+            assign(variables, 'gen_ai.request.top_p', top_p)
+    
+    # Extract output information
+    output_attr = attributes.get('output', {})
+    response_model = None
+    response_id = None
+    finish_reasons = []
+    
+    if isinstance(output_attr, dict):
+        output_value = output_attr.get('value') or {}
+        if isinstance(output_value, str):
+            try:
+                output_value = json.loads(output_value)
+            except:
+                pass
+        
+        if isinstance(output_value, dict):
+            response_id = output_value.get('id')
+            response_model = output_value.get('model')
+            
+            # Extract finish reasons
+            choices = output_value.get('choices', [])
+            if isinstance(choices, list):
+                for choice in choices:
+                    if isinstance(choice, dict):
+                        finish_reason = choice.get('finish_reason')
+                        if finish_reason:
+                            finish_reasons.append(finish_reason)
+    
+    if response_model:
+        assign(variables, 'gen_ai.response.model', to_str_or_none(response_model))
+    
+    if finish_reasons:
+        assign(variables, 'gen_ai.response.finish_reasons', finish_reasons)
+    
+    # Token usage (semantic conventions)
+    token_count = llm_attrs.get('token_count', {})
+    if isinstance(token_count, str):
+        try:
+            token_count = json.loads(token_count)
+        except:
+            token_count = {}
+    
+    if isinstance(token_count, dict):
+        input_tokens = token_count.get('prompt_tokens') or token_count.get('input_tokens')
+        output_tokens = token_count.get('completion_tokens') or token_count.get('output_tokens')
+        
+        if input_tokens is not None:
+            assign(variables, 'gen_ai.usage.input_tokens', input_tokens)
+        if output_tokens is not None:
+            assign(variables, 'gen_ai.usage.output_tokens', output_tokens)
+    
+    # Legacy LLM fields (backward compatibility)
+    assign(variables, 'llm_tools', to_str_or_none(llm_attrs.get('tools')))
+    assign(variables, 'llm_token_count', to_str_or_none(llm_attrs.get('token_count')))
+    assign(variables, 'llm_output_messages', to_str_or_none(
+        llm_attrs.get('output_messages', {}).get('output_messages')))
+    assign(variables, 'llm_input_messages', to_str_or_none(
+        llm_attrs.get('input_messages', {}).get('input_messages')))
+    assign(variables, 'llm_model', to_str_or_none(model_name))
+    assign(variables, 'llm_invocation_parameters', to_str_or_none(invocation_params))
+    assign(variables, 'llm_system', to_str_or_none(llm_attrs.get('system')))
+    assign(variables, 'llm_input', to_str_or_none(attributes.get('input', {}).get('value')))
+    # Safe extraction of llm_output
+    llm_output_val = output_attr.get('value') if isinstance(output_attr, dict) else output_attr
+    assign(variables, 'llm_output', to_str_or_none(llm_output_val))
+    assign(variables, 'kind', to_str_or_none(attributes.get('fi', {}).get('span', {}).get('kind')))
+    
+    # Resource attributes
+    assign(variables, 'otel_resource', to_str_or_none(span.get('resource', {}).get('attributes')))
+    assign(variables, 'from_source', "openAI_Python_Telemetry")
+    
+    # Response ID for linking
+    assign(variables, 'resp_id', to_str_or_none(response_id))
+    
+    # Check if streaming
+    is_streaming = invocation_params.get('stream', False) if isinstance(invocation_params, dict) else False
+    if is_streaming:
+        assign(variables, 'is_streaming', True)
+    
+    # Debug raw data if enabled
+    if get_env_bool('ANOSYS_DEBUG_LOGS'):
+        assign(variables, "raw", json.dumps(span, default=str))
+    
     return reassign(variables)
 
 
 def set_nested(obj, path, value):
+    """Helper to set nested dictionary values from dotted paths."""
     parts = path.split(".")
     current = obj
     for i, part in enumerate(parts[:-1]):
@@ -198,6 +259,7 @@ def set_nested(obj, path, value):
 
 
 def deserialize_attributes(obj):
+    """Deserialize flattened attributes into nested structure."""
     flat_attrs = obj.get("attributes", {})
     new_attrs = {}
     for key, value in flat_attrs.items():
@@ -207,22 +269,36 @@ def deserialize_attributes(obj):
 
 
 class CustomConsoleExporter(SpanExporter):
+    """Custom exporter to send spans to Anosys API."""
+    
     def export(self, spans) -> SpanExportResult:
+        """Export spans to Anosys API."""
         for span in spans:
-            span_json = json.loads(span.to_json(indent=2))
-            deserialized = deserialize_attributes(span_json)
-            data = extract_span_info(deserialized, raw_json=span_json)
             try:
+                span_json = json.loads(span.to_json(indent=2))
+                deserialized = deserialize_attributes(span_json)
+                data = extract_span_info(deserialized)
+                
+                # Log source to help identify non-OpenAI spans
+                span_source = data.get("cvs200") or "unknown_source"  # from_source maps to cvs200
+                span_name = data.get("otel_name") or "unknown"
+                print(f"[ANOSYS]📡 Exporting span from: {span_source} | Name: {span_name}")
+                
                 response = requests.post(log_api_url, json=data, timeout=5)
                 response.raise_for_status()
+
             except Exception as e:
-                print(f"[ANOSYS]❌ POST failed: {e}")
-                print(f"[ANOSYS]❌ Data: {json.dumps(data, indent=2)}")
+                print(f"[ANOSYS]❌ Export failed: {e}")
+                try:
+                    print(f"[ANOSYS]❌ Data: {json.dumps(data, indent=2)}")
+                except Exception:
+                    pass
         return SpanExportResult.SUCCESS
+
 
 def setup_tracing(api_url, use_batch_processor=False):
     """
-    Initialize tracing for OpenAI with optional BatchSpanProcessor.
+    Initialize tracing for OpenAI and ALL other OpenTelemetry sources.
 
     Args:
         api_url (str): URL to post telemetry data.
@@ -232,25 +308,38 @@ def setup_tracing(api_url, use_batch_processor=False):
     log_api_url = api_url
 
     with _lock:
+        # Global TracerProvider applies to all OTEL instrumented libraries
         trace_provider = TracerProvider()
 
         exporter = CustomConsoleExporter()
         if use_batch_processor:
-            span_processor = BatchSpanProcessor(exporter, schedule_delay_millis=1000, max_queue_size=2048, max_export_batch_size=512)
+            span_processor = BatchSpanProcessor(
+                exporter,
+                schedule_delay_millis=1000,
+                max_queue_size=2048,
+                max_export_batch_size=512
+            )
             print("[ANOSYS] Using BatchSpanProcessor for spans")
         else:
             span_processor = SimpleSpanProcessor(exporter)
             print("[ANOSYS] Using SimpleSpanProcessor for spans")
 
+        # Register the global provider
         trace_provider.add_span_processor(span_processor)
         trace.set_tracer_provider(trace_provider)
 
+        # Instrument OpenAI
         instrumentor = OpenAIInstrumentor()
         try:
-            if instrumentor._is_instrumented_by_opentelemetry:
+            if getattr(instrumentor, "_is_instrumented_by_opentelemetry", False):
                 instrumentor.uninstrument()
         except Exception as e:
-            print(f"[ANOSYS]❌ Uninstrument error (safe to ignore if first call): {e}")
+            print(f"[ANOSYS]⚠️ Uninstrument warning: {e}")
 
         instrumentor.instrument(tracer_provider=trace_provider)
-        print("[ANOSYS] AnoSys Instrumented OpenAI with custom tracer")
+
+        print("[ANOSYS]✅ AnoSys Instrumented OpenAI and all OpenTelemetry traces")
+
+        # Optional: Print active tracer info to confirm global registration
+        active_provider = trace.get_tracer_provider()
+        print(f"[ANOSYS] Active global tracer provider: {active_provider.__class__.__name__}")
