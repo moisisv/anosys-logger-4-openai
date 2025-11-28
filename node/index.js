@@ -78,6 +78,7 @@ const keyToCV = {
     llm_input_messages: "cvs7",
     llm_model_name: "cvs8",
     llm_invocation_parameters: "cvs9",
+    raw: "cvs199",
     from_source: "cvs200",
     duration_ms: "otel_duration_ms",
     trace_flags: "cvs11",
@@ -244,6 +245,7 @@ class AnoSysExporter {
             const tools = invocationParams.tools || null;
 
             const payload = {
+                raw: JSON.stringify(result),
                 from_source: "openAI_Node_Telemetry",
                 name: span.name || null,
                 trace_id: ctx.traceId || null,
@@ -424,9 +426,15 @@ export function anosysLogger(source = null) {
             } finally {
                 console.log(`[ANOSYS] Logger: Output args:`, JSON.stringify(output));
                 const payload = {
+                    raw: JSON.stringify({
+                        source,
+                        input: args,
+                        output,
+                        name: original.name || "anonymous"
+                    }),
                     from_source: source,
-                    input: args.toString(),
-                    output: output.toString(),
+                    input: JSON.stringify(args),
+                    output: JSON.stringify(output),
                     name: original.name || "anonymous",
                 };
 
