@@ -101,8 +101,25 @@ def extract_span_info(span):
     # OpenTelemetry Semantic Conventions for Gen AI
     # Reference: https://opentelemetry.io/docs/specs/semconv/gen-ai/
     
+    # --- General & System ---
     # System is always "openai" for this instrumentor
     assign(variables, 'gen_ai.system', 'openai')
+    # Provider name (e.g., openai, aws.bedrock)
+    assign(variables, 'gen_ai.provider.name', 'openai')
+    
+    # Operation name from span name (e.g., "chat", "embeddings.create")
+    span_name = span.get('name', '')
+    if span_name:
+        # Extract operation from span name (e.g., "chat.completions.create" -> "chat")
+        operation = span_name.split('.')[0] if '.' in span_name else span_name
+        assign(variables, 'gen_ai.operation.name', operation)
+    
+    # Server address from resource or default
+    resource_attrs = span.get('resource', {}).get('attributes', {})
+    server_addr = resource_attrs.get('server.address') or 'api.openai.com'
+    server_port = resource_attrs.get('server.port') or 443
+    assign(variables, 'server.address', server_addr)
+    assign(variables, 'server.port', server_port)
     
     # Extract model information from invocation parameters or result
     llm_attrs = attributes.get('llm', {})
@@ -114,15 +131,23 @@ def extract_span_info(span):
         except:
             invocation_params = {}
     
-    # Request parameters (semantic conventions)
+    # --- Request Configuration (LLM) ---
     model_name = llm_attrs.get('model_name')
     if model_name:
         assign(variables, 'gen_ai.request.model', to_str_or_none(model_name))
     
     if isinstance(invocation_params, dict):
+        # Core parameters
         temperature = invocation_params.get('temperature')
         max_tokens = invocation_params.get('max_tokens')
         top_p = invocation_params.get('top_p')
+        top_k = invocation_params.get('top_k')
+        frequency_penalty = invocation_params.get('frequency_penalty')
+        presence_penalty = invocation_params.get('presence_penalty')
+        stop_sequences = invocation_params.get('stop')
+        seed = invocation_params.get('seed')
+        n = invocation_params.get('n')  # number of choices
+        response_format = invocation_params.get('response_format')
         
         if temperature is not None:
             assign(variables, 'gen_ai.request.temperature', temperature)
@@ -130,12 +155,25 @@ def extract_span_info(span):
             assign(variables, 'gen_ai.request.max_tokens', max_tokens)
         if top_p is not None:
             assign(variables, 'gen_ai.request.top_p', top_p)
+        if top_k is not None:
+            assign(variables, 'gen_ai.request.top_k', top_k)
+        if frequency_penalty is not None:
+            assign(variables, 'gen_ai.request.frequency_penalty', frequency_penalty)
+        if presence_penalty is not None:
+            assign(variables, 'gen_ai.request.presence_penalty', presence_penalty)
+        if stop_sequences is not None:
+            assign(variables, 'gen_ai.request.stop_sequences', stop_sequences)
+        if seed is not None:
+            assign(variables, 'gen_ai.request.seed', seed)
+        if n is not None:
+            assign(variables, 'gen_ai.request.choice.count', n)
     
-    # Extract output information
+    # --- Extract output information ---
     output_attr = attributes.get('output', {})
     response_model = None
     response_id = None
     finish_reasons = []
+    output_type = None
     
     if isinstance(output_attr, dict):
         output_value = output_attr.get('value') or {}
@@ -148,6 +186,20 @@ def extract_span_info(span):
         if isinstance(output_value, dict):
             response_id = output_value.get('id')
             response_model = output_value.get('model')
+            object_type = output_value.get('object')
+            
+            # Determine output type from response
+            if object_type:
+                if 'chat' in object_type:
+                    output_type = 'text'
+                elif 'embedding' in object_type:
+                    output_type = 'embedding'
+                elif 'image' in object_type:
+                    output_type = 'image'
+            
+            # Check for JSON mode
+            if invocation_params.get('response_format', {}).get('type') == 'json_object':
+                output_type = 'json'
             
             # Extract finish reasons
             choices = output_value.get('choices', [])
@@ -158,11 +210,18 @@ def extract_span_info(span):
                         if finish_reason:
                             finish_reasons.append(finish_reason)
     
+    # --- Response & Usage (LLM) ---
     if response_model:
         assign(variables, 'gen_ai.response.model', to_str_or_none(response_model))
     
+    if response_id:
+        assign(variables, 'gen_ai.response.id', to_str_or_none(response_id))
+    
     if finish_reasons:
         assign(variables, 'gen_ai.response.finish_reasons', finish_reasons)
+    
+    if output_type:
+        assign(variables, 'gen_ai.output.type', output_type)
     
     # Token usage (semantic conventions)
     token_count = llm_attrs.get('token_count', {})
@@ -175,11 +234,83 @@ def extract_span_info(span):
     if isinstance(token_count, dict):
         input_tokens = token_count.get('prompt_tokens') or token_count.get('input_tokens')
         output_tokens = token_count.get('completion_tokens') or token_count.get('output_tokens')
+        total_tokens = token_count.get('total_tokens')
         
         if input_tokens is not None:
             assign(variables, 'gen_ai.usage.input_tokens', input_tokens)
         if output_tokens is not None:
             assign(variables, 'gen_ai.usage.output_tokens', output_tokens)
+        if total_tokens is not None:
+            assign(variables, 'gen_ai.usage.total_tokens', total_tokens)
+        elif input_tokens is not None and output_tokens is not None:
+            # Calculate total if not provided
+            assign(variables, 'gen_ai.usage.total_tokens', input_tokens + output_tokens)
+    
+    # --- Content & Messages (Opt-In) ---
+    # Extract input messages - try multiple sources
+    input_messages = None
+    
+    # Try from input_messages attribute
+    input_msg_attr = llm_attrs.get('input_messages', {})
+    if isinstance(input_msg_attr, dict):
+        input_messages = input_msg_attr.get('input_messages')
+    
+    # Try from invocation_parameters.messages
+    if not input_messages and isinstance(invocation_params, dict):
+        messages = invocation_params.get('messages')
+        if messages:
+            input_messages = messages
+    
+    if input_messages:
+        assign(variables, 'gen_ai.input.messages', to_str_or_none(input_messages))
+    
+    # Extract output messages from choices
+    output_messages = None
+    output_msg_attr = llm_attrs.get('output_messages', {})
+    if isinstance(output_msg_attr, dict):
+        output_messages = output_msg_attr.get('output_messages')
+    
+    # Also try from output_value.choices
+    if not output_messages and isinstance(output_value, dict):
+        choices = output_value.get('choices', [])
+        if choices:
+            messages = [choice.get('message') for choice in choices if choice.get('message')]
+            if messages:
+                output_messages = messages
+    
+    if output_messages:
+        assign(variables, 'gen_ai.output.messages', to_str_or_none(output_messages))
+    
+    # System instructions - extract from messages array
+    system_content = llm_attrs.get('system')
+    if not system_content and input_messages:
+        # Try to find system message in input messages
+        if isinstance(input_messages, list):
+            for msg in input_messages:
+                if isinstance(msg, dict) and msg.get('role') == 'system':
+                    system_content = msg.get('content')
+                    break
+        elif isinstance(input_messages, str):
+            try:
+                parsed_messages = json.loads(input_messages)
+                if isinstance(parsed_messages, list):
+                    for msg in parsed_messages:
+                        if isinstance(msg, dict) and msg.get('role') == 'system':
+                            system_content = msg.get('content')
+                            break
+            except:
+                pass
+    
+    if system_content:
+        assign(variables, 'gen_ai.system_instructions', to_str_or_none(system_content))
+    
+    # Tool definitions (if available)
+    tools = llm_attrs.get('tools')
+    if not tools and isinstance(invocation_params, dict):
+        tools = invocation_params.get('tools')
+    
+    if tools:
+        assign(variables, 'gen_ai.tool.definitions', to_str_or_none(tools))
     
     # Legacy LLM fields (backward compatibility)
     assign(variables, 'llm_tools', to_str_or_none(llm_attrs.get('tools')))

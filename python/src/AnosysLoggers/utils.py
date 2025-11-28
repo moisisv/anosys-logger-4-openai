@@ -33,16 +33,51 @@ key_to_cvs = {
     "status": "otel_status",
     "status_code": "otel_status_code",
     
-    # OpenTelemetry Semantic Conventions for Gen AI
+    # --- General & System ---
     "gen_ai.system": "gen_ai_system",
+    "gen_ai.provider.name": "gen_ai_provider_name",
+    "gen_ai.operation.name": "gen_ai_operation_name",
+    "server.address": "server_address",
+    "server.port": "server_port",
+    "error.type": "error_type",
+    
+    # --- Request Configuration (LLM) ---
     "gen_ai.request.model": "gen_ai_request_model",
-    "gen_ai.response.model": "gen_ai_response_model",
     "gen_ai.request.temperature": "gen_ai_request_temperature",
-    "gen_ai.request.max_tokens": "gen_ai_request_max_tokens",
     "gen_ai.request.top_p": "gen_ai_request_top_p",
+    "gen_ai.request.top_k": "gen_ai_request_top_k",
+    "gen_ai.request.max_tokens": "gen_ai_request_max_tokens",
+    "gen_ai.request.frequency_penalty": "gen_ai_request_frequency_penalty",
+    "gen_ai.request.presence_penalty": "gen_ai_request_presence_penalty",
+    "gen_ai.request.stop_sequences": "gen_ai_request_stop_sequences",
+    "gen_ai.request.seed": "gen_ai_request_seed",
+    "gen_ai.request.choice.count": "gen_ai_request_choice_count",
+    "gen_ai.request.encoding_formats": "gen_ai_request_encoding_formats",
+    
+    # --- Response & Usage (LLM) ---
+    "gen_ai.response.model": "gen_ai_response_model",
+    "gen_ai.response.id": "gen_ai_response_id",
     "gen_ai.response.finish_reasons": "gen_ai_response_finish_reasons",
     "gen_ai.usage.input_tokens": "gen_ai_usage_input_tokens",
     "gen_ai.usage.output_tokens": "gen_ai_usage_output_tokens",
+    "gen_ai.usage.total_tokens": "gen_ai_usage_total_tokens",
+    "gen_ai.output.type": "gen_ai_output_type",
+    
+    # --- Content & Messages (Opt-In) ---
+    "gen_ai.input.messages": "gen_ai_input_messages",
+    "gen_ai.output.messages": "gen_ai_output_messages",
+    "gen_ai.system_instructions": "gen_ai_system_instructions",
+    "gen_ai.tool.definitions": "gen_ai_tool_definitions",
+    
+    # --- Agents & Frameworks ---
+    "gen_ai.agent.id": "gen_ai_agent_id",
+    "gen_ai.agent.name": "gen_ai_agent_name",
+    "gen_ai.agent.description": "gen_ai_agent_description",
+    "gen_ai.conversation.id": "gen_ai_conversation_id",
+    "gen_ai.data_source.id": "gen_ai_data_source_id",
+    
+    # --- Embeddings Specific ---
+    "gen_ai.embeddings.dimension.count": "gen_ai_embeddings_dimension_count",
     
     # Legacy LLM fields (backward compatibility)
     "llm_tools": "llm_tools",
@@ -61,7 +96,7 @@ key_to_cvs = {
     "output": "cvs2",
     "caller": "cvs4",
     "error": "cvs3",
-    "error_type": "cvs10",
+    "cvs10": "cvs10",  # error_type - keeping for backward compatibility
     "error_message": "cvs11",
     "error_stack": "cvs12",
     
