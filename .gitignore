@@ -208,3 +208,4 @@ __marimo__/
 commands
 data.json
 only_reference/
+node_modules
