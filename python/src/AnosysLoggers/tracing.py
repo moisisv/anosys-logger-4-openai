@@ -329,7 +329,8 @@ def extract_span_info(span):
     assign(variables, 'kind', to_str_or_none(attributes.get('fi', {}).get('span', {}).get('kind')))
     
     # Resource attributes
-    assign(variables, 'otel_resource', to_str_or_none(span.get('resource', {}).get('attributes')))
+    # assign(variables, 'otel_resource', to_str_or_none(span.get('resource', {}).get('attributes')))
+    assign(variables, 'otel_resource', json.dumps(span.get('resource', {}).get('attributes'), default=str))
     assign(variables, 'from_source', "openAI_Python_Telemetry")
     
     # Response ID for linking
@@ -341,8 +342,7 @@ def extract_span_info(span):
         assign(variables, 'is_streaming', True)
     
     # Debug raw data if enabled
-    if get_env_bool('ANOSYS_DEBUG_LOGS'):
-        assign(variables, "raw", json.dumps(span, default=str))
+    assign(variables, "raw", json.dumps(span, default=str))
     
     return reassign(variables)
 
