@@ -342,10 +342,9 @@ function hrTimeToMillis(hrtime) {
 function setupTracing(apiUrl) {
     if (apiUrl) logApiUrl = apiUrl;
 
-    const tracerProvider = new NodeTracerProvider();
-    tracerProvider.addSpanProcessor(
-        new SimpleSpanProcessor(new AnoSysExporter())
-    );
+    const tracerProvider = new NodeTracerProvider({
+        spanProcessors: [new SimpleSpanProcessor(new AnoSysExporter())]
+    });
     tracerProvider.register();
     trace.setGlobalTracerProvider(tracerProvider);
 
