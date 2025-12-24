@@ -25,13 +25,15 @@ jobs:
         run: python -m pip install --upgrade build
 
       - name: Build distributions
-        run: python -m build
+        run: |
+          cd python
+          python -m build
 
       - name: Upload built artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
-          path: dist/
+          path: python/dist/
 
   test-linux:
     name: Test wheel on Linux
