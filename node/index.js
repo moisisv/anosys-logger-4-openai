@@ -87,7 +87,7 @@ const keyToCV = {
     links: "cvs15",
     model_method: "cvs16",
     model_arguments: "cvs17",
-    is_streaming: "cvb2",
+    is_streaming: "cvb1",
 };
 
 // Separate starting indices per type
@@ -251,7 +251,7 @@ class AnoSysExporter {
                 trace_id: ctx.traceId || null,
                 span_id: ctx.spanId || null,
                 parent_id: span?.parentSpanId || null,
-                trace_flags: ctx.traceFlags || null,
+                trace_flags: ctx.traceFlags ? String(ctx.traceFlags) : null,
                 trace_state: ctx.traceState?.serialize() || null,
                 kind: span.kind || null,
                 start_time: new Date(hrTimeToMillis(span.startTime)).toISOString(),
