@@ -88,6 +88,7 @@ const keyToCV = {
     model_method: "cvs16",
     model_arguments: "cvs17",
     is_streaming: "cvb1",
+    custom_mapping: "otel_schema_url",
 };
 
 // Separate starting indices per type
@@ -299,7 +300,9 @@ class AnoSysExporter {
                 // Legacy fields for backward compatibility
                 model_method: span.attributes?.["openai.method"] || null,
                 model_arguments: span.attributes?.["openai.args"] || null,
+                input: span.attributes?.["openai.args"] || null,
                 output: span.attributes?.["openai.result"] || null,
+                custom_mapping: JSON.stringify(keyToCV),
                 events: span.events?.map((e) => ({
                     name: e.name,
                     time: hrTimeToMillis(e.time),
@@ -435,6 +438,7 @@ export function anosysLogger(source = null) {
                     input: JSON.stringify(args),
                     output: JSON.stringify(output),
                     name: original.name || "anonymous",
+                    custom_mapping: JSON.stringify(keyToCV),
                 };
 
                 try {
@@ -464,7 +468,9 @@ export function anosysLogger(source = null) {
 
 export async function anosysRawLogger(data = {}) {
     try {
-        await axios.post(logApiUrl, reassign(data, globalStartingIndices), {
+        const payload = reassign(data, globalStartingIndices);
+        payload.otel_schema_url = JSON.stringify(keyToCV);
+        await axios.post(logApiUrl, payload, {
             timeout: 5000,
         });
         console.log(
