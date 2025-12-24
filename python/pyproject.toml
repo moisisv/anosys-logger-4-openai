@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anosys-logger-4-openai"
-version = "0.0.6"
+version = "0.0.11"
 description = "A helper package, to support implementation to AnoSys platform easly"
 authors = [{name = "Moisis Vafeiadis", email = "moisisv@gmail.com"}]
 readme = "README.md"
