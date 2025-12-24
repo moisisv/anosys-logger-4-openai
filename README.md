@@ -10,16 +10,16 @@ Monitor, analyze, and debug your OpenAI API usage with [AnoSys](https://anosys.a
 
 - **Python Package**: [./python/README.md](./python/README.md)
 - **Node.js Package**: [./node/README.md](./node/README.md)
-- **Get API Key**: [https://console.anosys.ai/collect/integrationoptions](https://console.anosys.ai/collect/integrationoptions)
+- **Get API Key**: [https://console.anosys.ai/](https://console.anosys.ai/)
 
 ## ✨ Features
 
-- ✅ **Zero-Config Instrumentation** - Just install and use
+- ✅ **Zero-Config Instrumentation** - Just install and set your API keys
 - ✅ **Full Streaming Support** - Captures streaming responses with chunk aggregation
 - ✅ **OpenTelemetry Standards** - Follows Gen AI semantic conventions
-- ✅ **Custom Decorators** - Log any function, sync or async
+- ✅ **Custom Decorators** - Log any function execution
 - ✅ **Error Tracking** - Full stack traces and context
-- ✅ **Distributed Tracing** - Trace IDs for multi-service tracking
+- ✅ **Distributed Tracing** - Unified tracing across your services
 
 ## 📦 Installation
 
@@ -44,10 +44,11 @@ import os
 from openai import OpenAI
 from AnosysLoggers import AnosysOpenAILogger
 
+# Set keys or ensure they are in your environment
 os.environ["ANOSYS_API_KEY"] = "your-anosys-api-key"
 os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
 
-AnosysOpenAILogger()  # Initialize once
+AnosysOpenAILogger() # Initialize once
 client = OpenAI()
 
 # All OpenAI calls are now automatically logged ✨
@@ -63,10 +64,12 @@ response = client.chat.completions.create(
 import OpenAI from "openai";
 import { instrumentOpenAI } from "anosys-logger-4-openai";
 
+// Set keys or ensure they are in your environment
 process.env.ANOSYS_API_KEY = "your-anosys-api-key";
-const client = new OpenAI();
+process.env.OPENAI_API_KEY = "your-openai-api-key";
 
-instrumentOpenAI(client);  // Initialize once
+const client = new OpenAI();
+instrumentOpenAI(client); // Initialize once
 
 // All OpenAI calls are now automatically logged ✨
 const response = await client.chat.completions.create({
@@ -111,7 +114,6 @@ stream = client.chat.completions.create(
 
 for chunk in stream:
     print(chunk.choices[0].delta.content, end="")
-# Complete aggregated response logged to AnoSys ✨
 ```
 
 **Node.js:**
@@ -123,36 +125,8 @@ const stream = await client.chat.completions.create({
 });
 
 for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+  process.stdout.write(chunk.choices[0]?.delta?.content || "");
 }
-// Complete aggregated response logged to AnoSys ✨
-```
-
-## 🔧 Custom Function Logging
-
-**Python:**
-```python
-from AnosysLoggers import anosys_logger
-
-@anosys_logger(source="my_app.calculations")
-async def process_data(data):
-    return sum(data) / len(data)
-
-result = await process_data([1, 2, 3, 4, 5])
-# Function call logged with inputs, outputs, and timing ✨
-```
-
-**Node.js:**
-```javascript
-import { anosysLogger } from "anosys-logger-4-openai";
-
-let processData = async (data) => {
-  return data.reduce((a, b) => a + b, 0) / data.length;
-};
-processData = anosysLogger("my_app.calculations")(processData);
-
-const result = await processData([1, 2, 3, 4, 5]);
-// Function call logged with inputs, outputs, and timing ✨
 ```
 
 ## 🏗️ Architecture
@@ -195,7 +169,7 @@ const result = await processData([1, 2, 3, 4, 5]);
 
 ## 📝 License
 
-MIT License - see LICENSE file for details.
+MIT License.
 
 ## 🤝 Contributing
 
