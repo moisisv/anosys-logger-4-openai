@@ -187,7 +187,6 @@ except ValueError:
 |----------|----------|-------------|
 | `ANOSYS_API_KEY` | Yes | Your AnoSys API key |
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
-| `ANOSYS_DEBUG_LOGS` | No | Set to `false` to disable raw span logging |
 
 ## Requirements
 

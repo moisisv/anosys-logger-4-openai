@@ -220,7 +220,6 @@ try {
 |----------|----------|-------------|
 | `ANOSYS_API_KEY` | Yes | Your AnoSys API key |
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
-| `ANOSYS_DEBUG_LOGS` | No | Set to `true` to enable raw span logging |
 
 ## TypeScript Support
 

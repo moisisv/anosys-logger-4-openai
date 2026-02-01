@@ -219,7 +219,7 @@ def setup_decorator(path=None, starting_indices=None):
     if api_key:
         try:
             response = requests.get(
-                f"https://api.anosys.ai/api/resolveapikeys?apikey={api_key}",
+                f"https://console.anosys.ai/api/resolveapikeys?apikey={api_key}",
                 timeout=5
             )
             response.raise_for_status()

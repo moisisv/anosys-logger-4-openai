@@ -362,12 +362,12 @@ export function instrumentOpenAI(client) {
     if (process.env.ANOSYS_API_KEY) {
         axios
             .get(
-                `https://api.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
+                `https://console.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
                 { timeout: 5000 }
             )
             .then((response) => {
                 const data = response.data;
-                const apiUrl = data.url || "https://www.anosys.ai";
+                const apiUrl = data.apiUrl || "https://www.anosys.ai";
                 tracer = setupTracing(apiUrl);
             })
             .catch((error) => {
@@ -500,12 +500,12 @@ export function setupAPI({ path = null, startingIndices = null }) {
     if (process.env.ANOSYS_API_KEY) {
         axios
             .get(
-                `https://api.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
+                `https://console.anosys.ai/api/resolveapikeys?apikey=${process.env.ANOSYS_API_KEY}`,
                 { timeout: 5000 }
             )
             .then((response) => {
                 const data = response.data;
-                logApiUrl = data.url || "https://www.anosys.ai";
+                logApiUrl = data.apiUrl || "https://www.anosys.ai";
             })
             .catch((error) => {
                 console.error("[ERROR]❌ Failed to resolve API key:", error.message);

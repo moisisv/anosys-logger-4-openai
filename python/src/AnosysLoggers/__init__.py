@@ -34,7 +34,7 @@ class AnosysOpenAILogger:
 
         # retrive AnoSys url from API key and build the logging endpoint URL
         try:
-            response = requests.get(f"https://api.anosys.ai/api/resolveapikeys?apikey={api_key or 'AnoSys_mock_api_key'}", timeout=30)
+            response = requests.get(f"https://console.anosys.ai/api/resolveapikeys?apikey={api_key or 'AnoSys_mock_api_key'}", timeout=30)
             response.raise_for_status()  # Raises HTTPError for bad responses (e.g., 4xx/5xx)
             data = response.json()
             self.log_api_url = data.get("url", "https://www.anosys.ai")
