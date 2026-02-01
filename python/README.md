@@ -201,7 +201,7 @@ except ValueError:
 
 1. **Check your API key**: Ensure `ANOSYS_API_KEY` is set correctly
 2. **Initialize before OpenAI calls**: Call `AnosysOpenAILogger()` before making OpenAI requests
-3. **Check network**: Ensure you can reach `https://api.anosys.ai`
+3. **Check network**: Ensure you can reach `https://console.anosys.ai`
 
 ### Import errors?
 

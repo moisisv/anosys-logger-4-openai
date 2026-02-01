@@ -266,7 +266,7 @@ This means:
 
 1. **Check your API key**: Ensure `ANOSYS_API_KEY` is set correctly
 2. **Instrument before API calls**: Call `instrumentOpenAI(client)` before making requests
-3. **Check network**: Ensure you can reach `https://api.anosys.ai`
+3. **Check network**: Ensure you can reach `https://console.anosys.ai`
 4. **Check exports**: Make sure you're using ESM (`import`) not CommonJS (`require`)
 
 ### Module errors?
